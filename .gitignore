@@ -1,0 +1,31 @@
+# Keil MDK build output
+MDK-ARM/firmware/
+MDK-ARM/DebugConfig/
+MDK-ARM/RTE/
+MDK-ARM/*.uvguix.*
+MDK-ARM/*.uvoptx.bak
+MDK-ARM/JLinkLog.txt
+
+# Build artifacts
+*.o
+*.d
+*.crf
+*.axf
+*.hex
+*.bin
+*.map
+*.lst
+*.dep
+*.lnp
+*.htm
+*.build_log.htm
+
+# IDE / tool caches
+.codeartsdoer/
+.vscode/
+.settings/
+DebugConfig/
+
+# OS files
+Thumbs.db
+Desktop.ini
