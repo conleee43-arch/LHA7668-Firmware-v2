@@ -408,8 +408,10 @@ uint32_t lha7668_ReadData(void);
 float lha7668_CodeToVoltage(uint32_t code, uint32_t ref, uint8_t bipolar, uint8_t gain);
 float lha7668_CodeToTemperature(uint32_t code);
 
-/* Field parameters take the pre-shifted macros defined in this header
- * (AINP_x, CONFIG_x, FILTER_x, IO1_x, IOUT_CH_x). Never pass raw field values. */
+/* Field selection parameters take the pre-shifted macros defined in this header
+ * (AINP_x, CONFIG_x, FILTER_x, IO1_x, IOUT_CH_x). Never pass raw field values.
+ * The setup parameter is an exception: it is a raw index (0-7) because it is used
+ * both as a register offset and as the SETUP field, so never pass CH_SETUPx. */
 void lha7668_ConfigChannel(uint8_t channel, uint8_t enable, uint8_t setup, uint16_t ainp, uint16_t ainm);
 void lha7668_ConfigSetup(uint8_t setup, uint8_t bipolar, uint16_t burnout, uint8_t ref_buf_p, uint8_t ref_buf_m,
                           uint8_t ain_buf_p, uint8_t ain_buf_m, uint8_t ref_sel, uint8_t pga);

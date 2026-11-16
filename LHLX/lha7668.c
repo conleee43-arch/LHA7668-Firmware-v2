@@ -102,7 +102,8 @@ void lha7668_Init(void)
 		lha7668_ReadRegister(REG_CONFIG0, (uint8_t*)&regval, 2);
 		printf("REG_CONFIG0: 0x%x\r\n", (unsigned)regval);
 
-    // Configure FILTER0: Sinc4, FS=120 -> 20 SPS @ fCLK=76.8 kHz, Single Cycle off
+    // Configure FILTER0: Sinc4, FS=120, Single Cycle off
+    // Low power fCLK = 76.8 kHz, fADC = fCLK / (32 * FS) = 76800 / (32 * 120) = 20 SPS
     uint32_t filter = FILTER_SINC4 | (0x78 & FILTER_FS_MASK);
     lha7668_WriteRegister(REG_FILTER0, (uint8_t*)&filter, 3);
 		lha7668_ReadRegister(REG_FILTER0, (uint8_t*)&regval, 3);
@@ -250,16 +251,19 @@ float lha7668_CodeToTemperature(uint32_t code)
 
 /**
   * @brief  Configures a specific channel.
+  * @note   setup is a raw index (0-7) and is shifted inside this function. Do not
+  *         pass the pre-shifted CH_SETUPx macro here. ainp takes the pre-shifted
+  *         AINP_x macro, while ainm takes the raw AINM_x value.
   * @param  channel: Channel number (0-15).
   * @param  enable: 1 to enable, 0 to disable.
-  * @param  setup: Setup number (0-7).
+  * @param  setup: Setup index (0-7).
   * @param  ainp: Positive input selection (AINP_* defines, already shifted).
   * @param  ainm: Negative input selection (AINM_* defines).
   * @retval None
   */
 void lha7668_ConfigChannel(uint8_t channel, uint8_t enable, uint8_t setup, uint16_t ainp, uint16_t ainm)
 {
-    if (channel > 15) return;
+    if (channel > 15 || setup > 7) return;
 
     uint16_t reg_value = 0;
     uint8_t reg_addr = REG_CH0 + channel;
@@ -278,7 +282,7 @@ void lha7668_ConfigChannel(uint8_t channel, uint8_t enable, uint8_t setup, uint1
   * @note   All field parameters take the pre-shifted CONFIG_* macros defined in
   *         lha7668.h. Never pass raw field values: the macros already contain
   *         their bit offset and this function only masks them into place.
-  * @param  setup: Setup number (0-7).
+  * @param  setup: Setup index (0-7), raw value (not CH_SETUPx).
   * @param  bipolar: 1 for bipolar, 0 for unipolar.
   * @param  burnout: Burnout current (CONFIG_BURNOUT_* defines).
   * @param  ref_buf_p: 1 to enable REF+ buffer.
@@ -312,7 +316,7 @@ void lha7668_ConfigSetup(uint8_t setup, uint8_t bipolar, uint16_t burnout, uint8
   * @brief  Configures the filter for a specific setup.
   * @note   All field parameters take the pre-shifted FILTER_* macros defined in
   *         lha7668.h. Never pass raw field values.
-  * @param  setup: Setup number (0-7).
+  * @param  setup: Setup index (0-7), raw value (not CH_SETUPx).
   * @param  filter_type: FILTER_* defines.
   * @param  rej60: 1 to enable 60Hz rejection notch.
   * @param  post_filter: Post-filter selection (FILTER_POST_* defines).
