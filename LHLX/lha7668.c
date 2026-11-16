@@ -71,41 +71,49 @@ void lha7668_Init(void)
 		// Perform software reset
     lha7668_SoftwareReset();
 
-		uint16_t regval;
+		uint32_t regval = 0;
 		
 		// Read ID register to verify communication
     lha7668_ReadRegister(REG_ID, (uint8_t*)&regval, 1);
-		printf("ID: 0x%x\r\n",regval);
+		printf("ID: 0x%x\r\n", (unsigned)regval);
+
+    // Abort if the expected LHA7668B-8 is not present (e.g. broken SPI bus)
+    if (regval != LHA7668_EXPECTED_ID) {
+        printf("ID mismatch, expected 0x%x\r\n", (unsigned)LHA7668_EXPECTED_ID);
+        Error_Handler();
+        return;
+    }
 
     // Enter IDLE mode before configuration
     uint16_t adc_ctrl = CTRL_MODE_IDLE | CTRL_REF_EN | CTRL_PWR_LOW;
     lha7668_WriteRegister(REG_ADC_CTRL, (uint8_t*)&adc_ctrl, 2);
 		lha7668_ReadRegister(REG_ADC_CTRL, (uint8_t*)&regval, 2);
-		printf("ADC_CTRL: 0x%x\r\n",regval);
+		printf("ADC_CTRL: 0x%x\r\n", (unsigned)regval);
 
     // Configure Channel 0: Enable, Setup 0, AIN0(+), AIN1(-)
 		uint16_t ch_config = CH_EN | CH_SETUP0 | AINP_AIN0 | AINM_AIN1;
     lha7668_WriteRegister(REG_CH0, (uint8_t*)&ch_config, 2);
 		lha7668_ReadRegister(REG_CH0, (uint8_t*)&regval, 2);
-		printf("CH0: 0x%x\r\n",regval);
+		printf("CH0: 0x%x\r\n", (unsigned)regval);
 
     // Configure CONFIG0: Bipolar, PGA=1, Int Ref, All buffers off
     uint16_t config = CONFIG_BIPOLAR | CONFIG_REF_INTERNAL | CONFIG_PGA_1;
     lha7668_WriteRegister(REG_CONFIG0, (uint8_t*)&config, 2);
 		lha7668_ReadRegister(REG_CONFIG0, (uint8_t*)&regval, 2);
-		printf("REG_CONFIG0: 0x%x\r\n",regval);
+		printf("REG_CONFIG0: 0x%x\r\n", (unsigned)regval);
 
-    // Configure FILTER0: Sinc4, FS=120, Single Cycle off
-    uint16_t filter = FILTER_SINC4 | (0x78 & FILTER_FS_MASK); // 20SPS
+    // Configure FILTER0: Sinc4, FS=120 -> 20 SPS @ fCLK=76.8 kHz, Single Cycle off
+    uint32_t filter = FILTER_SINC4 | (0x78 & FILTER_FS_MASK);
     lha7668_WriteRegister(REG_FILTER0, (uint8_t*)&filter, 3);
 		lha7668_ReadRegister(REG_FILTER0, (uint8_t*)&regval, 3);
-		printf("REG_FILTER0: 0x%x\r\n",regval);
+		printf("REG_FILTER0: 0x%x\r\n", (unsigned)regval);
 		
 		// Switch to CONTINUOUS conversion mode
+    regval = 0;
     adc_ctrl = CTRL_MODE_CONT | CTRL_REF_EN | CTRL_PWR_LOW;
     lha7668_WriteRegister(REG_ADC_CTRL, (uint8_t*)&adc_ctrl, 2);
 		lha7668_ReadRegister(REG_ADC_CTRL, (uint8_t*)&regval, 2);
-		printf("ADC_CTRL: 0x%x\r\n",regval);
+		printf("ADC_CTRL: 0x%x\r\n", (unsigned)regval);
 		
 		// Clear digital filter
 		SYNC_LOW;
@@ -122,16 +130,16 @@ void lha7668_Init(void)
   */
 void lha7668_WriteRegister(uint8_t addr, uint8_t *data, uint8_t num)
 {
-    if (data == NULL || num == 0) {
+    // comms byte + up to 4 data bytes
+    uint8_t tx_buffer[5];
+    uint8_t rx_buffer[5];
+
+    if (data == NULL || num == 0 || num > 4) {
         return;
     }
 
     // Communications byte: Write operation, address
     uint8_t comms_byte = (0 << 6) | (addr & 0x3F);
-
-    // Transmit buffer: comms_byte + data (MSB-first for SPI)
-    uint8_t tx_buffer[4];
-    uint8_t rx_buffer[4];
     tx_buffer[0] = comms_byte;
 
     // Reverse byte order to convert from little-endian to big-endian
@@ -155,7 +163,7 @@ void lha7668_WriteRegister(uint8_t addr, uint8_t *data, uint8_t num)
   */
 void lha7668_ReadRegister(uint8_t addr, uint8_t *data, uint8_t num)
 {
-    if (data == NULL || num == 0) {
+    if (data == NULL || num == 0 || num > 4) {
         return;
     }
 		
@@ -163,8 +171,8 @@ void lha7668_ReadRegister(uint8_t addr, uint8_t *data, uint8_t num)
     uint8_t comms_byte = (1 << 6) | (addr & 0x3F);
 
     // Transmit: comms_byte + num dummy bytes (to provide clock)
-    uint8_t tx_buffer[4];
-    uint8_t rx_buffer[4];
+    uint8_t tx_buffer[5];
+    uint8_t rx_buffer[5];
     tx_buffer[0] = comms_byte;
     for (uint8_t i = 1; i <= num; i++) {
         tx_buffer[i] = 0x00;
@@ -186,7 +194,7 @@ void lha7668_ReadRegister(uint8_t addr, uint8_t *data, uint8_t num)
 /**
   * @brief  Reads the ADC conversion result (24-bit data only).
   * @param  None
-  * @retval 24-bit ADC conversion result (aligned to MSB, LSB 8 bits are zero).
+  * @retval 24-bit ADC conversion result, right-aligned (0x800000 = 0V, offset binary).
   */
 uint32_t lha7668_ReadData(void)
 {
@@ -226,14 +234,17 @@ float lha7668_CodeToVoltage(uint32_t code, uint32_t ref_mV, uint8_t bipolar, uin
 }
 
 /**
-  * @brief  Converts ADC code to temperature in C (LHA7668).
-  *         Formula: T(C) = ((code - 0x800000) / 13584) - 272.5
-  * @param  code: Raw ADC code from lha7668_ReadData().
+  * @brief  Converts ADC code to temperature in C.
+  * @note   The constants below are specific to LHA7668B (ID = 0x28):
+  *         T(C) = ((code - 0x800000) / 13584) - 272.5
+  *         The non-B LHA7668 (ID = 0x14) uses a different sensitivity. Do not
+  *         replace these constants unless the fitted part really is not a B.
+  * @param  code: Raw ADC code from lha7668_ReadData() (right-aligned 24-bit).
   * @retval Temperature in C.
   */
 float lha7668_CodeToTemperature(uint32_t code)
 {
-    int32_t signed_code = (int32_t)((code >> 8) & 0xFFFFFF) - 0x800000;
+    int32_t signed_code = (int32_t)code - 0x800000;
     return ((float)signed_code / 13584.0f) - 272.5f;
 }
 
@@ -264,6 +275,9 @@ void lha7668_ConfigChannel(uint8_t channel, uint8_t enable, uint8_t setup, uint1
 
 /**
   * @brief  Configures a specific setup.
+  * @note   All field parameters take the pre-shifted CONFIG_* macros defined in
+  *         lha7668.h. Never pass raw field values: the macros already contain
+  *         their bit offset and this function only masks them into place.
   * @param  setup: Setup number (0-7).
   * @param  bipolar: 1 for bipolar, 0 for unipolar.
   * @param  burnout: Burnout current (CONFIG_BURNOUT_* defines).
@@ -275,7 +289,7 @@ void lha7668_ConfigChannel(uint8_t channel, uint8_t enable, uint8_t setup, uint1
   * @param  pga: PGA gain (CONFIG_PGA_* defines).
   * @retval None
   */
-void lha7668_ConfigSetup(uint8_t setup, uint8_t bipolar, uint8_t burnout, uint8_t ref_buf_p, uint8_t ref_buf_m,
+void lha7668_ConfigSetup(uint8_t setup, uint8_t bipolar, uint16_t burnout, uint8_t ref_buf_p, uint8_t ref_buf_m,
                           uint8_t ain_buf_p, uint8_t ain_buf_m, uint8_t ref_sel, uint8_t pga)
 {
     if (setup > 7) return;
@@ -283,19 +297,21 @@ void lha7668_ConfigSetup(uint8_t setup, uint8_t bipolar, uint8_t burnout, uint8_
     uint16_t reg_value = 0;
 
     if (bipolar) reg_value |= CONFIG_BIPOLAR;
-    reg_value |= (burnout & 3) << 9;
+    reg_value |= (burnout & CONFIG_BURNOUT_MASK);
     if (ref_buf_p) reg_value |= CONFIG_REF_BUF_P;
     if (ref_buf_m) reg_value |= CONFIG_REF_BUF_M;
     if (ain_buf_p) reg_value |= CONFIG_AIN_BUF_P;
     if (ain_buf_m) reg_value |= CONFIG_AIN_BUF_M;
-    reg_value |= (ref_sel & 3) << 3;
-    reg_value |= (pga & 7);
+    reg_value |= (ref_sel & CONFIG_REF_SEL_MASK);
+    reg_value |= (pga & CONFIG_PGA_MASK);
 
     lha7668_WriteRegister(REG_CONFIG0 + setup, (uint8_t*)&reg_value, 2);
 }
 
 /**
   * @brief  Configures the filter for a specific setup.
+  * @note   All field parameters take the pre-shifted FILTER_* macros defined in
+  *         lha7668.h. Never pass raw field values.
   * @param  setup: Setup number (0-7).
   * @param  filter_type: FILTER_* defines.
   * @param  rej60: 1 to enable 60Hz rejection notch.
@@ -304,7 +320,7 @@ void lha7668_ConfigSetup(uint8_t setup, uint8_t bipolar, uint8_t burnout, uint8_
   * @param  fs: Filter word (0-2047).
   * @retval None
   */
-void lha7668_ConfigFilter(uint8_t setup, uint8_t filter_type, uint8_t rej60, uint8_t post_filter,
+void lha7668_ConfigFilter(uint8_t setup, uint32_t filter_type, uint8_t rej60, uint32_t post_filter,
                            uint8_t single_cycle, uint16_t fs)
 {
     if (setup > 7) return;
@@ -312,38 +328,41 @@ void lha7668_ConfigFilter(uint8_t setup, uint8_t filter_type, uint8_t rej60, uin
     uint32_t reg_value = 0;
     uint8_t reg_addr = REG_FILTER0 + setup;
 
-    reg_value |= (filter_type & 0xE0) << 16;
-    if (rej60) reg_value |= (1 << 20);
-    reg_value |= (post_filter & 7) << 17;
-    if (single_cycle) reg_value |= (1 << 16);
-    reg_value |= (fs & 0x07FF);
+    reg_value |= (filter_type & FILTER_TYPE_MASK);
+    if (rej60) reg_value |= FILTER_REJ60;
+    reg_value |= (post_filter & FILTER_POST_MASK);
+    if (single_cycle) reg_value |= FILTER_SINGLE_CYCLE;
+    reg_value |= (fs & FILTER_FS_MASK);
 
-    lha7668_WriteRegister(reg_addr, (uint8_t*)&reg_value, 4);
+    // FILTER is a 24-bit register: 3 data bytes
+    lha7668_WriteRegister(reg_addr, (uint8_t*)&reg_value, 3);
 }
 
 /**
   * @brief  Sets the excitation current source.
+  * @note   current takes the pre-shifted IO1_IOUTx_* macros (use the macros of
+  *         the same IOUT index as iout_sel). channel takes raw IOUT_CH_AINx.
   * @param  iout_sel: 0 for IOUT0, 1 for IOUT1.
   * @param  channel: Channel selection (IOUT_CH_AINx defines).
   * @param  current: Current value (IO1_IOUTx_* defines).
   * @retval None
   */
-void lha7668_SetIOUT(uint8_t iout_sel, uint8_t channel, uint8_t current)
+void lha7668_SetIOUT(uint8_t iout_sel, uint8_t channel, uint16_t current)
 {
     uint32_t reg_value = 0;
-    lha7668_ReadRegister(REG_IO_CTRL1, (uint8_t*)&reg_value, 4);
+    lha7668_ReadRegister(REG_IO_CTRL1, (uint8_t*)&reg_value, 3);
 
     if (iout_sel == 0) {
         reg_value &= ~(IO1_IOUT0_MASK | IO1_IOUT0_CH_MASK);
-        reg_value |= (current & 7) << 8;
-        reg_value |= (channel & 0x0F);
+        reg_value |= (current & IO1_IOUT0_MASK);
+        reg_value |= (channel & IO1_IOUT0_CH_MASK);
     } else {
-        reg_value &= ~(IO1_IOUT1_MASK | (0xF << 4));
-        reg_value |= (current & 7) << 11;
-        reg_value |= (channel & 0x0F) << 4;
+        reg_value &= ~(IO1_IOUT1_MASK | IO1_IOUT1_CH_MASK);
+        reg_value |= (current & IO1_IOUT1_MASK);
+        reg_value |= ((channel & IO1_IOUT0_CH_MASK) << 4);
     }
 
-    lha7668_WriteRegister(REG_IO_CTRL1, (uint8_t*)&reg_value, 4);
+    lha7668_WriteRegister(REG_IO_CTRL1, (uint8_t*)&reg_value, 3);
 }
 
 /**
@@ -364,7 +383,7 @@ void lha7668_SetVBIAS(uint16_t vbias_mask)
 void lha7668_SetPDSW(uint8_t enable)
 {
     uint32_t reg_value = 0;
-    lha7668_ReadRegister(REG_IO_CTRL1, (uint8_t*)&reg_value, 4);
+    lha7668_ReadRegister(REG_IO_CTRL1, (uint8_t*)&reg_value, 3);
 
     if (enable) {
         reg_value |= IO1_PDSW;
@@ -372,7 +391,7 @@ void lha7668_SetPDSW(uint8_t enable)
         reg_value &= ~IO1_PDSW;
     }
 
-    lha7668_WriteRegister(REG_IO_CTRL1, (uint8_t*)&reg_value, 4);
+    lha7668_WriteRegister(REG_IO_CTRL1, (uint8_t*)&reg_value, 3);
 }
 
 /**
@@ -385,7 +404,7 @@ void lha7668_SetPDSW(uint8_t enable)
 void lha7668_SetGPIO(uint8_t gpio_num, uint8_t enable, uint8_t value)
 {
     uint32_t reg_value = 0;
-    lha7668_ReadRegister(REG_IO_CTRL1, (uint8_t*)&reg_value, 4);
+    lha7668_ReadRegister(REG_IO_CTRL1, (uint8_t*)&reg_value, 3);
 
     switch (gpio_num) {
         case 1:
@@ -416,7 +435,7 @@ void lha7668_SetGPIO(uint8_t gpio_num, uint8_t enable, uint8_t value)
             return;
     }
 
-    lha7668_WriteRegister(REG_IO_CTRL1, (uint8_t*)&reg_value, 4);
+    lha7668_WriteRegister(REG_IO_CTRL1, (uint8_t*)&reg_value, 3);
 }
 
 /**
@@ -427,7 +446,7 @@ void lha7668_SetGPIO(uint8_t gpio_num, uint8_t enable, uint8_t value)
 uint32_t lha7668_ReadError(void)
 {
     uint32_t err = 0;
-    lha7668_ReadRegister(REG_ERROR, (uint8_t*)&err, 4);
+    lha7668_ReadRegister(REG_ERROR, (uint8_t*)&err, 3);
     return err;
 }
 
@@ -438,7 +457,7 @@ uint32_t lha7668_ReadError(void)
   */
 void lha7668_EnableDiagnostics(uint32_t err_en_mask)
 {
-    lha7668_WriteRegister(REG_ERROR_EN, (uint8_t*)&err_en_mask, 4);
+    lha7668_WriteRegister(REG_ERROR_EN, (uint8_t*)&err_en_mask, 3);
 }
 
 /**

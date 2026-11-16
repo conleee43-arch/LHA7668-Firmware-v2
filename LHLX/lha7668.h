@@ -98,6 +98,10 @@
 #define REG_GAIN6        0x37
 #define REG_GAIN7        0x38
 
+/* NOTE: on LHA7668B all gains are factory calibrated, so GAIN0..GAIN7 hold the
+ * production trim values. Do not overwrite them with an internal full-scale
+ * (system gain) calibration unless your external reference is more accurate. */
+
 /*============================================================================
  * STATUS Register bits (Address 0x00) [Reset = 0x00]
  *============================================================================*/
@@ -204,12 +208,16 @@
 #define VBIAS0_MASK       (1 << 0)
 
 /*============================================================================
- * ID Register value (Address 0x05) [Reset = 0x14]
+ * ID Register value (Address 0x05)
+ * Reset value is variant dependent: 0x28 for LHA7668B-8, 0x14 for LHA7668-8
  *============================================================================*/
-#define ID_7668_4        0x04    /* LHA7668-4  */
-#define ID_7668_8        0x14    /* LHA7668-8  */
-#define ID_7668_B4       0x18    /* LHA7668B-4 */
-#define ID_7668_B8       0x28    /* LHA7668B-4 */
+#define ID_7668_4        0x04    /* LHA7668-4   */
+#define ID_7668_8        0x14    /* LHA7668-8   */
+#define ID_7668_B4       0x18    /* LHA7668B-4  */
+#define ID_7668_B8       0x28    /* LHA7668B-8  */
+
+/* The evaluation board is fitted with LHA7668B-8; lha7668_Init() verifies this. */
+#define LHA7668_EXPECTED_ID  ID_7668_B8
 
 /*============================================================================
  * ERROR Register bits (Address 0x06) [Reset = 0x000000]
@@ -357,6 +365,9 @@
 #define CONFIG_REF_EXT2     (1 << 3)
 #define CONFIG_REF_INTERNAL (2 << 3)
 #define CONFIG_REF_AVDD     (3 << 3)
+
+/* Internal reference initial accuracy: +/-0.1% (LHA7668B), +/-0.2% (LHA7668).
+ * Voltage conversion uses the nominal 2500 mV, so this dominates scale error. */
 #define CONFIG_PGA_MASK     (7 << 0)
 #define CONFIG_PGA_1        (0 << 0)
 #define CONFIG_PGA_2        (1 << 0)
@@ -397,12 +408,14 @@ uint32_t lha7668_ReadData(void);
 float lha7668_CodeToVoltage(uint32_t code, uint32_t ref, uint8_t bipolar, uint8_t gain);
 float lha7668_CodeToTemperature(uint32_t code);
 
+/* Field parameters take the pre-shifted macros defined in this header
+ * (AINP_x, CONFIG_x, FILTER_x, IO1_x, IOUT_CH_x). Never pass raw field values. */
 void lha7668_ConfigChannel(uint8_t channel, uint8_t enable, uint8_t setup, uint16_t ainp, uint16_t ainm);
-void lha7668_ConfigSetup(uint8_t setup, uint8_t bipolar, uint8_t burnout, uint8_t ref_buf_p, uint8_t ref_buf_m,
+void lha7668_ConfigSetup(uint8_t setup, uint8_t bipolar, uint16_t burnout, uint8_t ref_buf_p, uint8_t ref_buf_m,
                           uint8_t ain_buf_p, uint8_t ain_buf_m, uint8_t ref_sel, uint8_t pga);
-void lha7668_ConfigFilter(uint8_t setup, uint8_t filter_type, uint8_t rej60, uint8_t post_filter, uint8_t single_cycle, uint16_t fs);
+void lha7668_ConfigFilter(uint8_t setup, uint32_t filter_type, uint8_t rej60, uint32_t post_filter, uint8_t single_cycle, uint16_t fs);
 
-void lha7668_SetIOUT(uint8_t iout_sel, uint8_t channel, uint8_t current);
+void lha7668_SetIOUT(uint8_t iout_sel, uint8_t channel, uint16_t current);
 void lha7668_SetVBIAS(uint16_t vbias_mask);
 void lha7668_SetPDSW(uint8_t enable);
 void lha7668_SetGPIO(uint8_t gpio_num, uint8_t enable, uint8_t value);
