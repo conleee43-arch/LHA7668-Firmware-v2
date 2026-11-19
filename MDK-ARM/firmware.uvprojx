@@ -921,6 +921,21 @@
               <FileType>1</FileType>
               <FilePath>..\LHLX\lha7668.c</FilePath>
             </File>
+            <File>
+              <FileName>lha7668_seq16_test.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\LHLX\lha7668_seq16_test.c</FilePath>
+            </File>
+            <File>
+              <FileName>lha7668_seq15_test.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\LHLX\lha7668_seq15_test.c</FilePath>
+            </File>
+            <File>
+              <FileName>lha7668_1CH-CONT_test.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\LHLX\lha7668_1CH-CONT_test.c</FilePath>
+            </File>
           </Files>
         </Group>
         <Group>

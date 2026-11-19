@@ -26,6 +26,9 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "lha7668.h"
+#include "lha7668_seq16_test.h"
+#include "lha7668_seq15_test.h"
+#include "lha7668_1CH-CONT_test.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -35,7 +38,12 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
+#define LHA7668_TEST_MODE_DIFF1    0
+#define LHA7668_TEST_MODE_SEQ16    1
+#define LHA7668_TEST_MODE_SEQ15    2
+#define LHA7668_TEST_MODE_1CH_CONT 3
 
+#define LHA7668_TEST_MODE          LHA7668_TEST_MODE_SEQ15
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -81,8 +89,10 @@ void delay_us(uint16_t us)
 int main(void)
 {
   /* USER CODE BEGIN 1 */
+#if (LHA7668_TEST_MODE == LHA7668_TEST_MODE_DIFF1)
 	uint32_t adc_data;
 	float volt_mv;
+#endif
   /* USER CODE END 1 */
 
   /* MCU Configuration--------------------------------------------------------*/
@@ -109,7 +119,15 @@ int main(void)
   /* USER CODE BEGIN 2 */
 	printf("firmware start\r\n");
   /* Initialize device */
+#if (LHA7668_TEST_MODE == LHA7668_TEST_MODE_1CH_CONT)
+  lha7668_1ChContTest_Init();
+#elif (LHA7668_TEST_MODE == LHA7668_TEST_MODE_SEQ15)
+  lha7668_Seq15Test_Init();
+#elif (LHA7668_TEST_MODE == LHA7668_TEST_MODE_SEQ16)
+  lha7668_Seq16Test_Init();
+#else
   lha7668_Init();
+#endif
 	//miso set to gpio int
 	miso_int_init();
 	CSN_LOW;   //CS low, wait for drdy
@@ -122,6 +140,13 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
+#if (LHA7668_TEST_MODE == LHA7668_TEST_MODE_1CH_CONT)
+		lha7668_1ChContTest_ProcessSample();
+#elif (LHA7668_TEST_MODE == LHA7668_TEST_MODE_SEQ15)
+		lha7668_Seq15Test_ProcessSample();
+#elif (LHA7668_TEST_MODE == LHA7668_TEST_MODE_SEQ16)
+		lha7668_Seq16Test_ProcessSample();
+#else
 		if(falg_data_ready)
 		{
 			falg_data_ready=0;
@@ -135,6 +160,7 @@ int main(void)
 			miso_int_init();
 			CSN_LOW;   //CS low, wait for drdy
 		}
+#endif
   }
   /* USER CODE END 3 */
 }

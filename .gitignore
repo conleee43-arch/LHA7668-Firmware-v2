@@ -5,6 +5,7 @@ MDK-ARM/RTE/
 MDK-ARM/*.uvguix.*
 MDK-ARM/*.uvoptx.bak
 MDK-ARM/JLinkLog.txt
+MDK-ARM/JLinkSettings.ini
 
 # Build artifacts
 *.o
